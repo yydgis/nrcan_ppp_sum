@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstring>
 #include <cmath>
+#include <functional>
 
 #include "itrf.h"
 
@@ -203,25 +204,59 @@ static void extract_coordinate(const char *fname)
       ppp.sigma95_NEU[2] = atof(buffer + 73);
     }
   }
+
+std::string sname;
+    std::size_t loc = ppp.fname.find('_');
+    if (loc==std::string::npos)
+    {
+      sname = ppp.fname;
+    }
+    else
+    {
+      sname = ppp.fname.substr(0,loc);
+    }
+    std::string stime;
+    loc = ppp.stime.find(' ');
+    if (loc==std::string::npos)
+    {
+      stime = ppp.stime;
+    }
+    else
+    {
+      stime = ppp.stime.substr(0,loc);
+    }
+    std::string etime;
+    loc = ppp.etime.find(' ');
+    if (loc==std::string::npos)
+    {
+      etime = ppp.etime;
+    }
+    else
+    {
+      etime = ppp.etime.substr(0,loc);
+    }
+
   if (fabs(ppp.xyz[0]) < 0.001 || fabs(ppp.xyz[1]) < 0.001 || fabs(ppp.xyz[2]) < 0.001)
   {
 
   }
   else
   {
+    
+
     /* output solution with valid xyz */
     double blh[3] = { 0 };
     ecef2pos_(ppp.xyz, blh, RE_GRS80, FE_GRS80);
     FILE* fITRF_BLH = fopen("itrf20_blh.txt", "w");
     if (fITRF_BLH)
     {
-        fprintf(fITRF_BLH, "%.9f,%.9f,%.4f,%s,%.2f,%.4f,%.4f,%.4f,%s(%6.2f),%s,%s\n", ppp.blh[0], -ppp.blh[1], ppp.blh[2], ppp.fname.c_str(), ppp.amb_fix_rate, ppp.sigma95_NEU[0], ppp.sigma95_NEU[1], ppp.sigma95_NEU[2], ppp.coord_name.c_str(), ppp.epoch, ppp.stime.c_str(), ppp.etime.c_str());
+        fprintf(fITRF_BLH, "%.9f,%.9f,%.4f,%s,%.2f,%.4f,%.4f,%.4f,%s(%6.2f),%s,%s\n", ppp.blh[0], -ppp.blh[1], ppp.blh[2], sname.c_str(), ppp.amb_fix_rate, ppp.sigma95_NEU[0], ppp.sigma95_NEU[1], ppp.sigma95_NEU[2], ppp.coord_name.c_str(), ppp.epoch, stime.c_str(), etime.c_str());
         fclose(fITRF_BLH);
     }
     FILE* fITRF_XYZ = fopen("itrf20_xyz.txt", "w");
     if (fITRF_XYZ)
     {
-        fprintf(fITRF_XYZ, "%.4f,%.4f,%.4f,%s,%.2f,%.4f,%.4f,%.4f,%s(%6.2f),%s,%s\n", ppp.xyz[0], ppp.xyz[1], ppp.xyz[2], ppp.fname.c_str(), ppp.amb_fix_rate, ppp.sigma95_xyz[0], ppp.sigma95_xyz[1], ppp.sigma95_xyz[2], ppp.coord_name.c_str(), ppp.epoch, ppp.stime.c_str(), ppp.etime.c_str());
+        fprintf(fITRF_XYZ, "%.4f,%.4f,%.4f,%s,%.2f,%.4f,%.4f,%.4f,%s(%6.2f),%s,%s\n", ppp.xyz[0], ppp.xyz[1], ppp.xyz[2], sname.c_str(), ppp.amb_fix_rate, ppp.sigma95_xyz[0], ppp.sigma95_xyz[1], ppp.sigma95_xyz[2], ppp.coord_name.c_str(), ppp.epoch, stime.c_str(), etime.c_str());
         fclose(fITRF_XYZ);
     }
     FILE* fITRF_2015 = fopen("cfg_itrf2020_2015.txt", "w");
@@ -294,6 +329,8 @@ static void extract_coordinate(const char *fname)
     }    
   }
   if (fLOG) fclose(fLOG);
+
+  printf("-station=%s -itrf2020=\"ITRF2020(%.2f),%.4f,%.4f,%.4f,%.2f,%.2f,%.4f,%.4f,%.4f,%s,%s\"\n", sname.c_str(), ppp.epoch, ppp.xyz[0], ppp.xyz[1], ppp.xyz[2], ppp.epoch, ppp.amb_fix_rate, ppp.sigma95_xyz[0], ppp.sigma95_xyz[1], ppp.sigma95_xyz[2], stime.c_str(), etime.c_str());
   FILE* fOUT = fopen("coord-sum.csv", "a");
   if (fOUT)
   {
@@ -332,9 +369,162 @@ static void extract_coordinate(const char *fname)
   return;
 }
 
+// trim from start (in place)
+inline void ltrim(std::string &s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(),
+            std::not_fn(std::ptr_fun<int, int>(std::isspace))));
+}
+// trim from end (in place)
+inline void rtrim(std::string &s) {
+    s.erase(std::find_if(s.rbegin(), s.rend(),
+            std::not_fn(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
+}
+
+static int extract_2015(const char *fname)
+{
+  FILE *fLOG = fopen(fname, "r");
+  char buffer[255] = { 0 };
+  int numofline = 0;
+  double xyz[3] = { 0 };
+  double vxyz[3] = { 0 };
+  std::string name;
+  double epoch = 0;
+  while (fLOG && !feof(fLOG) && fgets(buffer, sizeof(buffer), fLOG))
+  {
+    ++numofline;
+    //printf("%3i,%s,%s,%s\n", numofline, buffer, buffer+30, buffer+48);
+    if (numofline== 5) epoch = atof(buffer+17);
+    if (numofline== 9) name = std::string(buffer);
+    if (numofline==13) { xyz[0] = atof(buffer+30); vxyz[0] = atof(buffer+49); }
+    if (numofline==14) { xyz[1] = atof(buffer+30); vxyz[1] = atof(buffer+49); }
+    if (numofline==15) { xyz[2] = atof(buffer+30); vxyz[2] = atof(buffer+49); }
+  }
+
+  std::size_t loc = name.find('\n');
+  if (loc!=std::string::npos)
+  {
+    name = name.substr(0,loc);
+  }
+  loc = name.find('\r');
+  if (loc!=std::string::npos)
+  {
+    name = name.substr(0,loc);
+  }
+
+  ltrim(name);  
+
+  rtrim(name);
+
+  printf("-station=%s -itrf2020_2015=\"ITRF2020(%.2f),%.2f,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f\"\n", name.c_str(), epoch, epoch, xyz[0], xyz[1], xyz[2], vxyz[0], vxyz[1], vxyz[2]);
+
+  if (fLOG) fclose(fLOG);
+  return 1;
+}
+static int extract_nad83(const char *fname)
+{
+  FILE *fLOG = fopen(fname, "r");
+  char buffer[255] = { 0 };
+  int numofline = 0;
+  double xyz[3] = { 0 };
+  std::string name;
+  std::string name_coord;
+  double epoch = 0;
+  while (fLOG && !feof(fLOG) && fgets(buffer, sizeof(buffer), fLOG))
+  {
+    ++numofline;
+    //printf("%3i,%s,%s,%s\n", numofline, buffer, buffer+20, buffer+40);
+    if (numofline==4) { epoch = atof(buffer+75); buffer[54]='\0'; name_coord = std::string(buffer+29); }
+    if (numofline==6) { xyz[0] = atof(buffer+0); xyz[1] = atof(buffer+20); xyz[2] = atof(buffer+40); name = std::string(buffer+60); }
+  }
+
+  std::size_t loc = name.find(',');
+  if (loc!=std::string::npos)
+  {
+    name = name.substr(0,loc);
+  }
+
+  ltrim(name);
+
+  rtrim(name);
+
+  loc = name_coord.find(' ');
+  if (loc!=std::string::npos)
+  {
+    name = name.substr(0,loc);
+  }
+
+  ltrim(name_coord);
+
+  rtrim(name_coord);
+
+  printf("-station=%s -regional=\"%s(%.2f),%.2f,%.4f,%.4f,%.4f,0,0,0\"\n", name.c_str(), name_coord.c_str(), epoch, epoch, xyz[0], xyz[1], xyz[2]);
+
+  if (fLOG) fclose(fLOG);
+  return 1;
+}
+
+static int extract_wgs84(const char *fname)
+{
+  FILE *fLOG = fopen(fname, "r");
+  char buffer[255] = { 0 };
+  int numofline = 0;
+  double xyz[3] = { 0 };
+  std::string name;
+  std::string name_coord;
+  double epoch = 0;
+  while (fLOG && !feof(fLOG) && fgets(buffer, sizeof(buffer), fLOG))
+  {
+    ++numofline;
+    //printf("%3i,%s,%s,%s\n", numofline, buffer, buffer+20, buffer+40);
+    if (numofline==4) { epoch = atof(buffer+75); buffer[54]='\0'; name_coord = std::string(buffer+29); }
+    if (numofline==6) { xyz[0] = atof(buffer+0); xyz[1] = atof(buffer+20); xyz[2] = atof(buffer+40); name = std::string(buffer+60); }
+  }
+
+  std::size_t loc = name.find(',');
+  if (loc!=std::string::npos)
+  {
+    name = name.substr(0,loc);
+  }
+
+  ltrim(name);
+
+  rtrim(name);
+
+  loc = name_coord.find(' ');
+  if (loc!=std::string::npos)
+  {
+    name = name.substr(0,loc);
+  }
+
+  ltrim(name_coord);
+
+  rtrim(name_coord);
+
+
+  printf("-station=%s -wgs84=\"%s(%.2f),%.2f,%.4f,%.4f,%.4f,0,0,0\"\n", name.c_str(), name_coord.c_str(), epoch, epoch, xyz[0], xyz[1], xyz[2]);
+
+  if (fLOG) fclose(fLOG);
+  return 1;
+}
+
 int main(int argc, const char *argv[])
 {
   if (argc > 1)
     extract_coordinate(argv[1]);
+  if (argc>2)
+  {
+    if (strstr(argv[1], "nad83"))
+    {
+      extract_nad83(argv[2]);
+    }
+    else if (strstr(argv[1], "wgs84"))
+    {
+      extract_wgs84(argv[2]);
+    }
+    else if (strstr(argv[1], "2015"))
+    {
+      extract_2015(argv[2]);    
+    }
+  }
   return 0;
 }
